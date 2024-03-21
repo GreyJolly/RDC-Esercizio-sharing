@@ -5,10 +5,11 @@ services:
       dockerfile: Dockerfile
     command: ['0']
     networks:
-    - edge_0_7
-    - edge_0_5
+    - edge_0_4
+    - edge_0_9
     - edge_0_1
     - edge_0_6
+    - edge_0_2
   node1:
     build:
       context: ./src
@@ -16,7 +17,7 @@ services:
     command: ['1']
     networks:
     - edge_1_8
-    - edge_1_2
+    - edge_1_5
     - edge_0_1
   node2:
     build:
@@ -24,9 +25,8 @@ services:
       dockerfile: Dockerfile
     command: ['2']
     networks:
-    - edge_2_4
     - edge_2_3
-    - edge_1_2
+    - edge_0_2
   node3:
     build:
       context: ./src
@@ -40,21 +40,21 @@ services:
       dockerfile: Dockerfile
     command: ['4']
     networks:
-    - edge_2_4
+    - edge_0_4
   node5:
     build:
       context: ./src
       dockerfile: Dockerfile
     command: ['5']
     networks:
-    - edge_0_5
+    - edge_5_7
+    - edge_1_5
   node6:
     build:
       context: ./src
       dockerfile: Dockerfile
     command: ['6']
     networks:
-    - edge_6_9
     - edge_0_6
   node7:
     build:
@@ -62,7 +62,7 @@ services:
       dockerfile: Dockerfile
     command: ['7']
     networks:
-    - edge_0_7
+    - edge_5_7
   node8:
     build:
       context: ./src
@@ -76,14 +76,14 @@ services:
       dockerfile: Dockerfile
     command: ['9']
     networks:
-    - edge_6_9
+    - edge_0_9
 networks:
-  edge_0_7:
-  edge_6_9:
-  edge_2_4:
+  edge_5_7:
+  edge_0_4:
   edge_2_3:
   edge_1_8:
-  edge_1_2:
-  edge_0_5:
+  edge_0_9:
+  edge_1_5:
   edge_0_1:
   edge_0_6:
+  edge_0_2:

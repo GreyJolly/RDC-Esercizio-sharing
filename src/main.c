@@ -229,7 +229,9 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 	broadcast_addr.sin_addr.s_addr = inet_addr(BROADCAST_ADDRESS);
 	broadcast_addr.sin_port = htons(PORT);
 
-	int data, internal_sequence_number = -1;
+	int data, internal_sequence_number[NUMBER_OF_NODES];
+	for (int i = 0; i < NUMBER_OF_NODES; i++)
+		internal_sequence_number[i] = -1;
 	message sending_message;
 
 	// LISTENING LOOP
@@ -241,7 +243,6 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 
 	while (1)
 	{
-
 		// We check whether we have a new message ready (the read is non-blocking);
 		ret = read(generator_pipe[0], &data, sizeof(data));
 
@@ -275,7 +276,7 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 		if (sender_id == node_id)
 			continue;
 		// If the package's sequence number is higher than the internal one, discard it.
-		if (sequence_number >= internal_sequence_number && internal_sequence_number != -1)
+		if (sequence_number >= internal_sequence_number[sender_id] && internal_sequence_number[sender_id] != -1)
 			continue;
 
 		// Tell the analyzer that we recieved some data
@@ -283,11 +284,11 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 		if (ret <= 0)
 			handle_error("write");
 
-		internal_sequence_number = sequence_number;
+		internal_sequence_number[sender_id] = sequence_number;
 
 		sending_message.data = data;
 		sending_message.sender_id = node_id;
-		sending_message.sequence_number = ++internal_sequence_number;
+		sending_message.sequence_number = ++internal_sequence_number[sender_id];
 
 		ret = sendto(writing_fd, &sending_message, sizeof(message), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
 		if (ret < 0)
@@ -320,7 +321,11 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		handle_error("fork");
 	if (ret > 0)
+	{
 		traffic_analyzer(analyzer_pipe);
+		// We should never get here
+		_exit(EXIT_SUCCESS);
+	}
 	ret = close(analyzer_pipe[0]);
 	if (ret < 0)
 		handle_error("close");
@@ -329,7 +334,11 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		handle_error("fork");
 	if (ret > 0)
+	{
 		traffic_generator(generator_pipe);
+		// We should never get here
+		_exit(EXIT_SUCCESS);
+	}
 	ret = close(generator_pipe[1]);
 	if (ret < 0)
 		handle_error("close");
