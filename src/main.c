@@ -11,6 +11,7 @@
 #include <time.h>
 #include <errno.h>
 #include <ifaddrs.h>
+#include <sys/select.h>
 
 #define BUFFER_SIZE 64
 #define MAXIMUM_QUEUE 8
@@ -20,6 +21,7 @@
 #define SLIDING_WINDOW_SIZE_S 2
 #define TIME_BETWEEN_GENERATED_PACKAGES_MS 10
 #define TIME_BETWEEN_PRINTS_S 1
+#define SELECT_RATE_US 5
 
 // Errors in this program are sparcely handled.
 
@@ -187,28 +189,7 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 	listening_address.sin_addr.s_addr = htonl(INADDR_ANY);
 	listening_address.sin_port = htons(PORT);
 
-	/*
-	This code may be useful but I'm not sure what it does, if I've implemented it correctly,
-	or whether the behaviour having it not commented out is intended.
-	The program seems to work without it, but it probably doesn't  implement the network topology as intended.
-	*/
-
-	/*
-	struct ifaddrs *addrs, *tmp;
-	getifaddrs(&addrs);
-	tmp = addrs;
-	while (tmp){
-		if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET) {
-			setsockopt(listening_fd, SOL_SOCKET, SO_BINDTODEVICE, tmp->ifa_name, sizeof(tmp->ifa_name));
-		}
-		tmp = tmp->ifa_next;
-	}
-	freeifaddrs(addrs);
-	*/
-
 	bind(listening_fd, (struct sockaddr *)&listening_address, sizeof(listening_address));
-
-	fcntl(listening_fd, F_SETFL, O_NONBLOCK); // Set read as non blocking
 
 	// OPEN WRITING SOCKET
 
@@ -235,64 +216,75 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 	message sending_message;
 
 	// LISTENING LOOP
-	int sender_id, sequence_number;
+	int sender_id, sequence_number, ready_to_send;
 	message recieving_message;
+	fd_set read_fds;
+	struct timeval timeout;
 
 	printf("Node initialized\n");
 	fflush(stdout);
 
 	while (1)
 	{
-		// We check whether we have a new message ready (the read is non-blocking);
-		ret = read(generator_pipe[0], &data, sizeof(data));
+		// Handle select parameters
+		FD_ZERO(&read_fds);
+		FD_SET(listening_fd, &read_fds);
+		FD_SET(generator_pipe[0], &read_fds);
+		timeout.tv_sec = 0;
+		timeout.tv_usec = SELECT_RATE_US;
 
-		if (ret > 0)
+		ready_to_send = select(listening_fd + 1, &read_fds, NULL, NULL, &timeout);
+		if (ready_to_send > 0)
 		{
+			if (FD_ISSET(generator_pipe[0], &read_fds))
+			{ // The pipe has a message ready
 
-			// Tell the analyzer that we recieved some data
-			ret = write(analyzer_pipe[1], &node_id, sizeof(node_id));
-			if (ret <= 0)
-				handle_error("write");
+				ret = read(generator_pipe[0], &data, sizeof(data));
+				if (ret < sizeof(data))
+					handle_error("read");
+				// Tell the analyzer that we recieved some data
+				ret = write(analyzer_pipe[1], &node_id, sizeof(node_id));
+				if (ret <= 0)
+					handle_error("write");
 
-			sending_message.data = data;
-			sending_message.sender_id = node_id;
-			sending_message.sequence_number = 0;
+				sending_message.data = data;
+				sending_message.sender_id = node_id;
+				sending_message.sequence_number = 0;
 
-			ret = sendto(writing_fd, &sending_message, sizeof(message), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
-			if (ret < sizeof(message))
-				handle_error("sendto");
+				ret = sendto(writing_fd, &sending_message, sizeof(message), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+				if (ret < sizeof(data))
+					handle_error("sendto");
+			}
+			if (FD_ISSET(listening_fd, &read_fds))
+			{ // The socket has a message ready
+				ret = read(listening_fd, &recieving_message, sizeof(message));
+
+				sender_id = recieving_message.sender_id;
+				sequence_number = recieving_message.sequence_number;
+				data = recieving_message.data;
+
+				if (sender_id == node_id)
+					continue;
+				// If the package's sequence number is higher than the internal one, discard it.
+				if (sequence_number >= internal_sequence_number[sender_id] && internal_sequence_number[sender_id] != -1)
+					continue;
+
+				// Tell the analyzer that we recieved some data
+				ret = write(analyzer_pipe[1], &sender_id, sizeof(sender_id));
+				if (ret <= 0)
+					handle_error("write");
+
+				internal_sequence_number[sender_id] = sequence_number;
+
+				sending_message.data = data;
+				sending_message.sender_id = node_id;
+				sending_message.sequence_number = ++internal_sequence_number[sender_id];
+
+				ret = sendto(writing_fd, &sending_message, sizeof(message), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+				if (ret < 0)
+					handle_error("sendto");
+			}
 		}
-
-		ret = read(listening_fd, &recieving_message, sizeof(message));
-		if (ret < 0)
-			continue;
-		if (ret < sizeof(message))
-			handle_error("read");
-
-		sender_id = recieving_message.sender_id;
-		sequence_number = recieving_message.sequence_number;
-		data = recieving_message.data;
-
-		if (sender_id == node_id)
-			continue;
-		// If the package's sequence number is higher than the internal one, discard it.
-		if (sequence_number >= internal_sequence_number[sender_id] && internal_sequence_number[sender_id] != -1)
-			continue;
-
-		// Tell the analyzer that we recieved some data
-		ret = write(analyzer_pipe[1], &sender_id, sizeof(sender_id));
-		if (ret <= 0)
-			handle_error("write");
-
-		internal_sequence_number[sender_id] = sequence_number;
-
-		sending_message.data = data;
-		sending_message.sender_id = node_id;
-		sending_message.sequence_number = ++internal_sequence_number[sender_id];
-
-		ret = sendto(writing_fd, &sending_message, sizeof(message), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
-		if (ret < 0)
-			handle_error("sendto");
 	}
 }
 
@@ -312,7 +304,6 @@ int main(int argc, char *argv[])
 	ret = pipe(generator_pipe);
 	if (ret < 0)
 		handle_error("pipe");
-	fcntl(generator_pipe[0], F_SETFL, O_NONBLOCK); // Set read as non blocking
 	ret = pipe(analyzer_pipe);
 	if (ret < 0)
 		handle_error("pipe");
