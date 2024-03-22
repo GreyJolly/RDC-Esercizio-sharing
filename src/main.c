@@ -210,6 +210,19 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 	broadcast_addr.sin_addr.s_addr = inet_addr(BROADCAST_ADDRESS);
 	broadcast_addr.sin_port = htons(PORT);
 
+	struct ifaddrs *addrs, *tmp;
+	getifaddrs(&addrs);
+	tmp = addrs;
+	while (tmp)
+	{
+		if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET)
+		{
+			setsockopt(writing_fd, SOL_SOCKET, SO_BINDTODEVICE, tmp->ifa_name, sizeof(tmp->ifa_name));
+		}
+		tmp = tmp->ifa_next;
+	}
+	freeifaddrs(addrs);
+
 	int data, internal_sequence_number[NUMBER_OF_NODES];
 	for (int i = 0; i < NUMBER_OF_NODES; i++)
 		internal_sequence_number[i] = -1;
