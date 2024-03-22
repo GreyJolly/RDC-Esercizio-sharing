@@ -13,8 +13,6 @@
 #include <ifaddrs.h>
 #include <sys/select.h>
 
-#define BUFFER_SIZE 64
-#define MAXIMUM_QUEUE 8
 #define PORT 2507
 #define BROADCAST_ADDRESS "255.255.255.255"
 #define NUMBER_OF_NODES 10
@@ -26,8 +24,6 @@
 // Errors in this program are sparcely handled.
 
 // I would have liked to have used different files but I'm not sure how to appropiately modify the Dockerfile
-
-// I tried a different code formatting for this code.
 
 typedef struct message
 {
@@ -172,7 +168,7 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 
 	int ret;
 
-	// OPEN LISTENING SOCKET
+	// OPEN AND SETUP LISTENING SOCKET
 
 	int listening_fd;
 	struct sockaddr_in listening_address;
@@ -191,7 +187,7 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 
 	bind(listening_fd, (struct sockaddr *)&listening_address, sizeof(listening_address));
 
-	// OPEN WRITING SOCKET
+	// OPEN AND SETUP WRITING SOCKET
 
 	int writing_fd, n;
 	struct sockaddr_in broadcast_addr;
@@ -255,6 +251,7 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 				ret = read(generator_pipe[0], &data, sizeof(data));
 				if (ret < sizeof(data))
 					handle_error("read");
+				
 				// Tell the analyzer that we recieved some data
 				ret = write(analyzer_pipe[1], &node_id, sizeof(node_id));
 				if (ret <= 0)
@@ -303,7 +300,6 @@ void broadcaster(int node_id, int *generator_pipe, int *analyzer_pipe)
 
 int main(int argc, char *argv[])
 {
-
 	setvbuf(stdout, NULL, _IONBF, 0);
 
 	if (argc < 2)
